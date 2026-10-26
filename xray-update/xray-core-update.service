@@ -1,0 +1,15 @@
+[Unit]
+Description=Transactional Xray core update
+After=network-online.target proxy-ui.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/xray-core-update/update.py --version latest
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/proxy-stack /var/lib/proxy-stack /root/proxy-stack
+TimeoutStartSec=20min

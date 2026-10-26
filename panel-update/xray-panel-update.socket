@@ -1,0 +1,11 @@
+[Unit]
+Description=Managed 3x-ui update requests
+[Socket]
+ListenStream=/run/xray-panel-update.sock
+SocketUser=root
+SocketGroup=proxy-ui
+SocketMode=0660
+Accept=yes
+MaxConnections=8
+[Install]
+WantedBy=sockets.target

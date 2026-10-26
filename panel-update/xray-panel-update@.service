@@ -1,0 +1,16 @@
+[Unit]
+Description=Managed 3x-ui panel update
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/xray-panel-update/worker.py
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt /var/lib/proxy-stack /var/lib/proxy-publish /root/proxy-stack
+RuntimeMaxSec=15min
+TimeoutStopSec=180

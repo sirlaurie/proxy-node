@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh Song client profiles after panel changes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+
+[Install]
+WantedBy=timers.target

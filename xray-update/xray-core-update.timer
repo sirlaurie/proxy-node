@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly transactional Xray core update check
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=1800
+Persistent=true
+Unit=xray-core-update.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,111 @@
+#!/usr/bin/python3 -I
+"""Narrow adapter for the stock 3x-ui web updater, scoped to its service PATH."""
+
+import json
+import os
+import re
+import socket
+import sys
+from contextlib import suppress
+
+
+def parse(args: list[str]) -> tuple[dict[str, str], set[str]]:
+    env = {}
+    unit = None
+    index = 0
+    while index < len(args) and args[index] in ("--unit", "--setenv"):
+        flag = args[index]
+        if index + 1 >= len(args):
+            raise ValueError("missing systemd-run option value")
+        value = args[index + 1]
+        index += 2
+        if flag == "--unit":
+            if unit is not None:
+                raise ValueError("duplicate update unit")
+            unit = value
+        else:
+            key, separator, val = value.partition("=")
+            if not separator or key in env:
+                raise ValueError("invalid update environment")
+            env[key] = val
+
+    required = {
+        "XUI_MAIN_FOLDER",
+        "XUI_SERVICE",
+        "XUI_UPDATE_TAG",
+        "XUI_UPDATE_RUN_ID",
+        "XUI_UPDATE_STATUS_FILE",
+    }
+    allowed = required | {
+        "https_proxy",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "HTTP_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+        "no_proxy",
+        "NO_PROXY",
+    }
+    if not required <= env.keys() or env.keys() - allowed:
+        raise ValueError("unsupported update request")
+    if not re.fullmatch(r"x-ui-web-update-[0-9]+", unit or ""):
+        raise ValueError("unsupported unit")
+    expected_layout = {
+        "XUI_MAIN_FOLDER": "/opt/proxy-stack",
+        "XUI_SERVICE": "/etc/systemd/system",
+        "XUI_UPDATE_STATUS_FILE": "/var/lib/proxy-stack/update-status.json",
+    }
+    if any(env[key] != value for key, value in expected_layout.items()):
+        raise ValueError("unexpected managed layout")
+    if env["XUI_UPDATE_TAG"]:
+        raise ValueError("Web updates support the stable channel only")
+    if not re.fullmatch(r"[0-9]{1,20}", env["XUI_UPDATE_RUN_ID"]):
+        raise ValueError("invalid run ID")
+    if (
+        len(args[index:]) != 3
+        or args[index] not in ("/bin/bash", "/usr/bin/bash")
+        or args[index + 1] != "-lc"
+    ):
+        raise ValueError("unsupported invocation")
+
+    script = args[index + 2]
+    match = re.fullmatch(
+        r"set -e; trap 'rm -f '/tmp/3x-ui-update-([0-9]+)\.sh'' EXIT; "
+        r"'/usr/bin/bash' '/tmp/3x-ui-update-\1\.sh'",
+        script,
+    )
+    if not match:
+        raise ValueError("unsupported update script invocation")
+    cleanup = {f"/tmp/3x-ui-update-{match.group(1)}.sh"}
+    return {"runId": env["XUI_UPDATE_RUN_ID"], "channel": "stable"}, cleanup
+
+
+def main() -> None:
+    request, cleanup = parse(sys.argv[1:])
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(10)
+            connection.connect("/run/xray-panel-update.sock")
+            connection.sendall(json.dumps(request).encode() + b"\n")
+            data = b""
+            while b"\n" not in data:
+                part = connection.recv(1024)
+                if not part or len(data) > 4096:
+                    raise RuntimeError("Invalid updater response")
+                data += part
+            response = json.loads(data)
+            if not response.get("accepted"):
+                raise RuntimeError(response.get("error", "Update rejected"))
+            print("Managed panel update accepted: " + request["runId"])
+    finally:
+        for path in cleanup:
+            with suppress(FileNotFoundError):
+                os.unlink(path)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)
